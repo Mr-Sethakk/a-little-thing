@@ -17,7 +17,7 @@ from schemas import NewsItem, NewsListResponse, NewsDetailResponse
 
 Base.metadata.create_all(bind=engine)
 
-# Migration: add source_name column if missing
+# Migration: add source_name column if missing, fix datetime in date columns
 def migrate_db():
     from sqlalchemy import text, inspect
     inspector = inspect(engine)
@@ -26,6 +26,10 @@ def migrate_db():
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE news ADD COLUMN source_name VARCHAR(100)"))
             conn.commit()
+    # Fix any datetime strings stored in publish_date (SQLite doesn't enforce types)
+    with engine.connect() as conn:
+        conn.execute(text("UPDATE news SET publish_date = SUBSTR(publish_date, 1, 10) WHERE LENGTH(publish_date) > 10"))
+        conn.commit()
 
 try:
     migrate_db()
