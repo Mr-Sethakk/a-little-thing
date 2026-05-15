@@ -5,6 +5,7 @@ import logging
 import hashlib
 import time
 import random
+import json
 from datetime import datetime, date
 
 import requests
@@ -30,11 +31,52 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "news.db")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DATA_DIR, "news.db")
+LOG_PATH = os.path.join(DATA_DIR, "scrape_logs.jsonl")
+MAX_LOG_LINES = 5000
+
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
 Base.metadata.create_all(bind=engine)
 Session = sessionmaker(bind=engine)
+
+_public_ip = None
+
+def get_public_ip() -> str:
+    global _public_ip
+    if _public_ip:
+        return _public_ip
+    try:
+        resp = requests.get("https://httpbin.org/ip", timeout=5)
+        _public_ip = resp.json().get("origin", "unknown")
+    except Exception:
+        _public_ip = "unknown"
+    return _public_ip
+
+def append_log(source_name: str, source_url: str, count: int, new_count: int, status: str):
+    entry = {
+        "time": datetime.now().strftime("%Y/%m/%d %H:%M:%S"),
+        "source": source_name,
+        "url": source_url,
+        "ip": get_public_ip(),
+        "count": count,
+        "new": new_count,
+        "status": status,
+    }
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # Rotate if too many lines
+        with open(LOG_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > MAX_LOG_LINES:
+            with open(LOG_PATH, "w", encoding="utf-8") as f:
+                f.writelines(lines[-MAX_LOG_LINES // 2:])
+    except Exception:
+        pass
 
 
 def content_hash(title: str, source_url: str) -> str:
@@ -210,36 +252,44 @@ def run_scraper(source_type: str = None):
             time.sleep(delay)
 
         logger.info(f"抓取源: {source['name']} ({source['type']})")
-        if source["type"] == "rss":
-            items = scrape_rss(source)
-        elif source["type"] == "web" and "sina" in source["url"]:
-            items = scrape_web_sina(source)
-        elif source["type"] == "web":
-            items = scrape_web_generic(source)
-        else:
-            items = []
+        source_new = 0
+        status = "success"
+        try:
+            if source["type"] == "rss":
+                items = scrape_rss(source)
+            elif source["type"] == "web" and "sina" in source["url"]:
+                items = scrape_web_sina(source)
+            elif source["type"] == "web":
+                items = scrape_web_generic(source)
+            else:
+                items = []
 
-        for item in items:
-            if is_duplicate(db, item["title"], item["source_url"]):
-                total_skip += 1
-                continue
-            try:
-                news = News(
-                    title=item["title"],
-                    summary=item["summary"],
-                    content=item["content"],
-                    image_url=item["image_url"],
-                    source_url=item["source_url"],
-                    source_name=item.get("source_name", ""),
-                    category=item["category"],
-                    publish_date=item["publish_date"],
-                )
-                db.add(news)
-                total_new += 1
-            except Exception as e:
-                logger.error(f"存储失败: {item['title']}: {e}")
+            for item in items:
+                if is_duplicate(db, item["title"], item["source_url"]):
+                    total_skip += 1
+                    continue
+                try:
+                    news = News(
+                        title=item["title"],
+                        summary=item["summary"],
+                        content=item["content"],
+                        image_url=item["image_url"],
+                        source_url=item["source_url"],
+                        source_name=item.get("source_name", ""),
+                        category=item["category"],
+                        publish_date=item["publish_date"],
+                    )
+                    db.add(news)
+                    total_new += 1
+                    source_new += 1
+                except Exception as e:
+                    logger.error(f"存储失败: {item['title']}: {e}")
+        except Exception as e:
+            status = "error"
+            logger.error(f"抓取异常 {source['name']}: {e}")
 
-        logger.info(f"  {source['name']}: 获取 {len(items)} 条")
+        append_log(source["name"], source["url"], len(items), source_new, status)
+        logger.info(f"  {source['name']}: 获取 {len(items)} 条, 新增 {source_new} 条")
 
     try:
         db.commit()

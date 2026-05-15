@@ -170,6 +170,22 @@ def get_scrape_status():
     }
 
 
+@app.get("/api/scrape/logs")
+def get_scrape_logs(limit: int = Query(200, ge=1, le=5000)):
+    import json
+    log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "scrape_logs.jsonl")
+    if not os.path.exists(log_path):
+        return {"logs": []}
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        logs = [json.loads(line) for line in lines[-limit:]]
+        logs.reverse()
+        return {"logs": logs}
+    except Exception:
+        return {"logs": []}
+
+
 @app.post("/api/scrape")
 def trigger_scrape():
     import subprocess

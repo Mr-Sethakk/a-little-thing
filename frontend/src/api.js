@@ -44,6 +44,11 @@ export async function fetchScrapeStatus() {
   return data
 }
 
+export async function fetchScrapeLogs(limit = 200) {
+  const { data } = await api.get('/scrape/logs', { params: { limit } })
+  return data.logs
+}
+
 export async function triggerScrape() {
   const { data } = await api.post('/scrape')
   return data

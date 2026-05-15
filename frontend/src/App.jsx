@@ -4,6 +4,7 @@ import NewsCard from './components/NewsCard'
 import NewsDetail from './components/NewsDetail'
 import CategoryFilter from './components/CategoryFilter'
 import Pagination from './components/Pagination'
+import Console from './components/Console'
 
 export default function App() {
   const [news, setNews] = useState([])
@@ -21,6 +22,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [dark, setDark] = useState(false)
   const [newCount, setNewCount] = useState(0)
+  const [showConsole, setShowConsole] = useState(false)
 
   const loadNews = useCallback(async () => {
     setLoading(true)
@@ -59,6 +61,12 @@ export default function App() {
   useEffect(() => {
     document.body.classList.toggle('dark', dark)
   }, [dark])
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape' && showConsole) setShowConsole(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [showConsole])
 
   // Poll every 60s: check if backend scraped new news
   useEffect(() => {
@@ -138,6 +146,18 @@ export default function App() {
                   </svg>
                 </div>
               </form>
+              <button
+                onClick={() => setShowConsole(true)}
+                className={`px-3 h-10 rounded-xl flex items-center gap-1.5 text-sm font-medium transition-all ${
+                  dark ? 'bg-gray-800 text-green-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+                title="Scrape Console"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="hidden lg:inline">Console</span>
+              </button>
               <button
                 onClick={() => setDark(!dark)}
                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
@@ -284,6 +304,9 @@ export default function App() {
 
       {/* News Detail Modal */}
       <NewsDetail news={selectedNews} onClose={() => setSelectedNews(null)} />
+
+      {/* Scrape Console */}
+      {showConsole && <Console dark={dark} onClose={() => setShowConsole(false)} />}
     </div>
   )
 }
