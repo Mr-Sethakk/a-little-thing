@@ -22,7 +22,6 @@ NEWS_SOURCES = [
 CATEGORIES = {
     "stock": "股市",
     "tech": "科技",
-    "economy": "经济",
     "finance": "财经",
     "policy": "政策",
     "market": "市场",

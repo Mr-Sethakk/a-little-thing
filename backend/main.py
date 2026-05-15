@@ -209,7 +209,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
     from datetime import timedelta
     import random
 
-    categories = ["股市", "科技", "经济", "财经", "政策", "市场"]
+    categories = ["股市", "科技", "财经", "政策"]
     sources = ["新浪财经", "中国经济网", "36氪", "第一财经", "证券时报", "财新网"]
     sample_news = [
         ("A股三大指数集体收涨 半导体板块领涨", "今日A股市场表现强劲，三大指数集体收涨，半导体板块涨幅居前，多只个股涨停。", "https://picsum.photos/seed/stock1/400/250"),
