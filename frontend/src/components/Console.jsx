@@ -5,6 +5,8 @@ export default function Console({ onClose, dark }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const bottomRef = useRef(null)
+  const scrollContainerRef = useRef(null)
+  const wasAtBottomRef = useRef(true)
 
   useEffect(() => {
     let active = true
@@ -21,8 +23,23 @@ export default function Console({ onClose, dark }) {
     return () => { active = false; clearInterval(interval) }
   }, [])
 
+  // Track if user is near the bottom before update
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = scrollContainerRef.current
+    if (!container) return
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      wasAtBottomRef.current = scrollHeight - scrollTop - clientHeight < 50
+    }
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  // Only auto-scroll if user was already at the bottom
+  useEffect(() => {
+    if (wasAtBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [logs])
 
   const statusColor = (s) =>
@@ -61,7 +78,7 @@ export default function Console({ onClose, dark }) {
       </div>
 
       {/* Log entries */}
-      <div className="flex-1 overflow-y-auto px-6 py-2 font-mono text-xs">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 py-2 font-mono text-xs">
         {loading ? (
           <div className="text-gray-500 py-8 text-center">Loading logs...</div>
         ) : logs.length === 0 ? (
