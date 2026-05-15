@@ -3,6 +3,8 @@ import sys
 import re
 import logging
 import hashlib
+import time
+import random
 from datetime import datetime, date
 
 import requests
@@ -15,7 +17,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 from models import News
 from database import Base
 
-from config import NEWS_SOURCES, DEFAULT_HEADERS, REQUEST_TIMEOUT
+from config import (
+    NEWS_SOURCES, DEFAULT_HEADERS, REQUEST_TIMEOUT,
+    MAX_RETRIES, RETRY_BACKOFF_BASE,
+    REQUEST_DELAY_MIN, REQUEST_DELAY_MAX,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,13 +52,19 @@ def is_duplicate(db, title: str, source_url: str) -> bool:
 
 
 def fetch_url(url: str) -> str:
-    try:
-        resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
-        resp.encoding = resp.apparent_encoding
-        return resp.text
-    except Exception as e:
-        logger.warning(f"请求失败 {url}: {e}")
-        return ""
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
+            resp.encoding = resp.apparent_encoding
+            return resp.text
+        except Exception as e:
+            wait = RETRY_BACKOFF_BASE ** (attempt + 1) + random.uniform(0, 1)
+            if attempt < MAX_RETRIES - 1:
+                logger.warning(f"请求失败 {url} (第{attempt+1}次): {e}, {wait:.1f}s后重试")
+                time.sleep(wait)
+            else:
+                logger.error(f"请求失败 {url} (已重试{MAX_RETRIES}次): {e}")
+    return ""
 
 
 def extract_image(soup, url: str) -> str:
@@ -178,13 +190,25 @@ def scrape_web_generic(source: dict) -> list:
     return news_list
 
 
-def run_scraper():
-    logger.info("=== 开始新闻抓取任务 ===")
+def run_scraper(source_type: str = None):
+    """
+    source_type: "rss" / "web" / None(全部)
+    """
+    label = source_type or "全部"
+    logger.info(f"=== 开始新闻抓取任务 ({label}) ===")
     db = Session()
     total_new = 0
     total_skip = 0
 
-    for source in NEWS_SOURCES:
+    sources = [s for s in NEWS_SOURCES if source_type is None or s["type"] == source_type]
+
+    for i, source in enumerate(sources):
+        # Random delay between sources (skip first)
+        if i > 0:
+            delay = random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX)
+            logger.debug(f"随机延迟 {delay:.1f}s")
+            time.sleep(delay)
+
         logger.info(f"抓取源: {source['name']} ({source['type']})")
         if source["type"] == "rss":
             items = scrape_rss(source)
@@ -225,9 +249,13 @@ def run_scraper():
     finally:
         db.close()
 
-    logger.info(f"抓取完成: 新增 {total_new} 条, 跳过 {total_skip} 条(重复)")
+    logger.info(f"抓取完成 ({label}): 新增 {total_new} 条, 跳过 {total_skip} 条(重复)")
     return total_new
 
 
 if __name__ == "__main__":
-    run_scraper()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--type", choices=["rss", "web"], default=None, help="只抓取指定类型")
+    args = parser.parse_args()
+    run_scraper(source_type=args.type)

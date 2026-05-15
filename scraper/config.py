@@ -35,3 +35,17 @@ DEFAULT_HEADERS = {
 }
 
 REQUEST_TIMEOUT = 15
+
+# Retry settings
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 2  # exponential: 2s, 4s, 8s
+
+# Random delay between requests (seconds)
+REQUEST_DELAY_MIN = 1
+REQUEST_DELAY_MAX = 3
+
+# Scrape intervals (minutes) — used by backend APScheduler
+RSS_INTERVAL_MIN = 1
+RSS_INTERVAL_MAX = 2
+WEB_INTERVAL_MIN = 3
+WEB_INTERVAL_MAX = 5

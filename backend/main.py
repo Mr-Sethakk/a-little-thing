@@ -35,27 +35,37 @@ except Exception:
 # Scraping state
 scrape_state = {"last_time": None, "last_new_count": 0, "running": False}
 
-def scheduled_scrape():
-    import subprocess
+def scheduled_scrape(source_type=None):
+    import subprocess, re
     if scrape_state["running"]:
         return
     scrape_state["running"] = True
     scraper_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper", "scraper.py")
     try:
-        result = subprocess.run(["python", scraper_path], capture_output=True, text=True, timeout=120)
-        import re
+        cmd = ["python", scraper_path]
+        if source_type:
+            cmd += ["--type", source_type]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         match = re.search(r"新增 (\d+) 条", result.stdout)
-        scrape_state["last_new_count"] = int(match.group(1)) if match else 0
+        new_count = int(match.group(1)) if match else 0
+        scrape_state["last_new_count"] = scrape_state["last_new_count"] + new_count
     except Exception:
         pass
     finally:
         scrape_state["last_time"] = datetime.now()
         scrape_state["running"] = False
 
-# APScheduler: scrape every 30 minutes
+# APScheduler: RSS every 1-2min, web every 3-5min (jitter adds randomness)
 from apscheduler.schedulers.background import BackgroundScheduler
 scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_scrape, "interval", minutes=30, id="news_scrape", replace_existing=True)
+scheduler.add_job(
+    scheduled_scrape, "interval", minutes=2, jitter=60,
+    args=["rss"], id="scrape_rss", replace_existing=True,
+)
+scheduler.add_job(
+    scheduled_scrape, "interval", minutes=5, jitter=120,
+    args=["web"], id="scrape_web", replace_existing=True,
+)
 scheduler.start()
 
 app = FastAPI(title="经济新闻抓取与展示系统", version="1.0.0")
