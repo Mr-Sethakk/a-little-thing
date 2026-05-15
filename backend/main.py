@@ -259,62 +259,6 @@ def seed_demo_data(db: Session = Depends(get_db)):
     return {"status": "success", "created": created}
 
 
-@app.get("/api/news/{news_id}/source")
-def fetch_source_content(news_id: int, db: Session = Depends(get_db)):
-    import re
-    import httpx
-    from bs4 import BeautifulSoup as BS
-
-    news = db.query(News).filter(News.id == news_id).first()
-    if not news:
-        raise HTTPException(status_code=404, detail="新闻不存在")
-    if not news.source_url:
-        return {"status": "no_url", "content": ""}
-
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        resp = httpx.get(news.source_url, headers=headers, timeout=15, follow_redirects=True)
-        resp.raise_for_status()
-        # Better encoding detection
-        ct = resp.headers.get("content-type", "")
-        m = re.search(r'charset=([^\s;]+)', ct, re.I)
-        if m:
-            resp.encoding = m.group(1).strip()
-        else:
-            m = re.search(rb'<meta[^>]+charset=["\']?([^"\'\s;>]+)', resp.content[:2048], re.I)
-            if m:
-                resp.encoding = m.group(1).decode("ascii", errors="ignore")
-            else:
-                try:
-                    resp.content.decode("utf-8")
-                    resp.encoding = "utf-8"
-                except UnicodeDecodeError:
-                    resp.encoding = resp.apparent_encoding or "utf-8"
-        soup = BS(resp.text, "lxml")
-
-        for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]):
-            tag.decompose()
-
-        article = soup.find("article") or soup.find("div", class_=re.compile(r"(article|content|detail|body|post)", re.I)) or soup.find("div", id=re.compile(r"(article|content|detail|body)", re.I))
-
-        if article:
-            paragraphs = article.find_all("p")
-        else:
-            paragraphs = soup.find_all("p")
-
-        content = "\n\n".join(p.get_text().strip() for p in paragraphs if p.get_text().strip() and len(p.get_text().strip()) > 10)
-
-        if not content:
-            content = article.get_text(separator="\n", strip=True) if article else soup.get_text(separator="\n", strip=True)
-
-        content = content.replace("�", "")
-        return {"status": "success", "content": content[:10000]}
-    except Exception as e:
-        return {"status": "error", "detail": str(e), "content": ""}
-
-
 if __name__ == "__main__":
     import uvicorn
 

@@ -19,11 +19,6 @@ export async function fetchNewsDetail(id) {
   return data
 }
 
-export async function fetchSourceContent(id) {
-  const { data } = await api.get(`/news/${id}/source`, { timeout: 20000 })
-  return data
-}
-
 export async function fetchCategories() {
   const { data } = await api.get('/categories')
   return data.categories
