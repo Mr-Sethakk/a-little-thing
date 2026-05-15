@@ -10,10 +10,12 @@ const defaultCategories = [
   { key: '市场', label: '市场' },
 ]
 
+const EXCLUDED = ['市场', '经济']
+
 export default function CategoryFilter({ categories, selected, onChange }) {
   const allCategories = [
     { key: '', label: '全部' },
-    ...categories.map((c) => ({ key: c, label: c })),
+    ...categories.filter((c) => !EXCLUDED.includes(c)).map((c) => ({ key: c, label: c })),
   ]
 
   return (

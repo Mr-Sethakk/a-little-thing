@@ -22,6 +22,7 @@ from config import (
     NEWS_SOURCES, DEFAULT_HEADERS, REQUEST_TIMEOUT,
     MAX_RETRIES, RETRY_BACKOFF_BASE,
     REQUEST_DELAY_MIN, REQUEST_DELAY_MAX,
+    CATEGORY_KEYWORDS,
 )
 
 logging.basicConfig(
@@ -147,6 +148,19 @@ def extract_image(soup, url: str) -> str:
     return ""
 
 
+def classify_category(title: str, summary: str, default: str) -> str:
+    """Classify news into category based on title/summary keywords."""
+    text = title + " " + summary
+    scores = {}
+    for cat, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score > 0:
+            scores[cat] = score
+    if scores:
+        return max(scores, key=scores.get)
+    return default
+
+
 def clean_html_text(html: str) -> str:
     """Strip HTML tags and decode entities to plain text."""
     if not html:
@@ -180,6 +194,7 @@ def scrape_rss(source: dict) -> list:
                 image_url = entry.media_thumbnail[0].get("url", "")
 
             if title and link:
+                default_cat = source.get("category", "经济")
                 news_list.append({
                     "title": title,
                     "summary": summary[:500] if summary else "",
@@ -187,7 +202,7 @@ def scrape_rss(source: dict) -> list:
                     "image_url": image_url,
                     "source_url": link,
                     "source_name": source.get("name", ""),
-                    "category": source.get("category", "经济"),
+                    "category": classify_category(title, summary, default_cat),
                     "publish_date": pub_date,
                 })
     except Exception as e:
@@ -210,6 +225,7 @@ def scrape_web_sina(source: dict) -> list:
             if not title or len(title) < 6 or href in seen:
                 continue
             seen.add(href)
+            default_cat = source.get("category", "财经")
             news_list.append({
                 "title": title,
                 "summary": "",
@@ -217,7 +233,7 @@ def scrape_web_sina(source: dict) -> list:
                 "image_url": "",
                 "source_url": href,
                 "source_name": source.get("name", ""),
-                "category": source.get("category", "财经"),
+                "category": classify_category(title, "", default_cat),
                 "publish_date": date.today(),
             })
     except Exception as e:
@@ -251,6 +267,7 @@ def scrape_web_generic(source: dict) -> list:
             summary_tag = article.find(["p", "span", "div"], class_=re.compile(r"(summary|desc|intro)", re.I))
             summary = clean_html_text(summary_tag.get_text())[:300] if summary_tag else ""
 
+            default_cat = source.get("category", "经济")
             news_list.append({
                 "title": title,
                 "summary": summary,
@@ -258,7 +275,7 @@ def scrape_web_generic(source: dict) -> list:
                 "image_url": image_url,
                 "source_url": href,
                 "source_name": source.get("name", ""),
-                "category": source.get("category", "经济"),
+                "category": classify_category(title, summary, default_cat),
                 "publish_date": date.today(),
             })
     except Exception as e:
