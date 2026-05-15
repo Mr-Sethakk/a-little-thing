@@ -273,7 +273,21 @@ def fetch_source_content(news_id: int, db: Session = Depends(get_db)):
         }
         resp = httpx.get(news.source_url, headers=headers, timeout=15, follow_redirects=True)
         resp.raise_for_status()
-        resp.encoding = resp.apparent_encoding
+        # Better encoding detection
+        ct = resp.headers.get("content-type", "")
+        m = re.search(r'charset=([^\s;]+)', ct, re.I)
+        if m:
+            resp.encoding = m.group(1).strip()
+        else:
+            m = re.search(rb'<meta[^>]+charset=["\']?([^"\'\s;>]+)', resp.content[:2048], re.I)
+            if m:
+                resp.encoding = m.group(1).decode("ascii", errors="ignore")
+            else:
+                try:
+                    resp.content.decode("utf-8")
+                    resp.encoding = "utf-8"
+                except UnicodeDecodeError:
+                    resp.encoding = resp.apparent_encoding or "utf-8"
         soup = BS(resp.text, "lxml")
 
         for tag in soup(["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]):
@@ -291,6 +305,7 @@ def fetch_source_content(news_id: int, db: Session = Depends(get_db)):
         if not content:
             content = article.get_text(separator="\n", strip=True) if article else soup.get_text(separator="\n", strip=True)
 
+        content = content.replace("�", "")
         return {"status": "success", "content": content[:10000]}
     except Exception as e:
         return {"status": "error", "detail": str(e), "content": ""}

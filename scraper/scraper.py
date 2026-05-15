@@ -93,11 +93,35 @@ def is_duplicate(db, title: str, source_url: str) -> bool:
     return False
 
 
+def detect_encoding(resp) -> str:
+    # 1. HTTP header charset
+    ct = resp.headers.get("Content-Type", "")
+    m = re.search(r'charset=([^\s;]+)', ct, re.I)
+    if m:
+        return m.group(1).strip().lower()
+    # 2. HTML meta tag charset (read raw bytes)
+    head = resp.content[:2048]
+    m = re.search(rb'<meta[^>]+charset=["\']?([^"\'\s;>]+)', head, re.I)
+    if m:
+        return m.group(1).decode("ascii", errors="ignore").lower()
+    m = re.search(rb'<meta[^>]+content=["\'][^"\']*charset=([^"\'\s;>]+)', head, re.I)
+    if m:
+        return m.group(1).decode("ascii", errors="ignore").lower()
+    # 3. Try UTF-8 first (most common for Chinese sites)
+    try:
+        resp.content.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        pass
+    # 4. Fall back to apparent_encoding
+    return resp.apparent_encoding or "utf-8"
+
+
 def fetch_url(url: str) -> str:
     for attempt in range(MAX_RETRIES):
         try:
             resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=REQUEST_TIMEOUT)
-            resp.encoding = resp.apparent_encoding
+            resp.encoding = detect_encoding(resp)
             return resp.text
         except Exception as e:
             wait = RETRY_BACKOFF_BASE ** (attempt + 1) + random.uniform(0, 1)
@@ -123,15 +147,25 @@ def extract_image(soup, url: str) -> str:
     return ""
 
 
+def clean_html_text(html: str) -> str:
+    """Strip HTML tags and decode entities to plain text."""
+    if not html:
+        return ""
+    text = BeautifulSoup(html, "lxml").get_text(separator=" ", strip=True)
+    # Fix common broken encodings: replace replacement char
+    text = text.replace("�", "")
+    return text
+
+
 def scrape_rss(source: dict) -> list:
     news_list = []
     try:
         feed = feedparser.parse(source["url"])
         for entry in feed.entries[:30]:
-            title = entry.get("title", "").strip()
+            title = clean_html_text(entry.get("title", ""))
             summary = entry.get("summary", "").strip()
             if summary:
-                summary = BeautifulSoup(summary, "lxml").get_text()[:500]
+                summary = clean_html_text(summary)[:500]
             link = entry.get("link", "")
             published = entry.get("published_parsed") or entry.get("updated_parsed")
             if published:
@@ -172,7 +206,7 @@ def scrape_web_sina(source: dict) -> list:
         seen = set()
         for link in links[:30]:
             href = link.get("href", "")
-            title = link.get_text().strip()
+            title = clean_html_text(link.get_text())
             if not title or len(title) < 6 or href in seen:
                 continue
             seen.add(href)
@@ -202,7 +236,7 @@ def scrape_web_generic(source: dict) -> list:
             a_tag = article.find("a", href=True)
             if not a_tag:
                 continue
-            title = a_tag.get_text().strip()
+            title = clean_html_text(a_tag.get_text())
             href = a_tag["href"]
             if not title or len(title) < 4:
                 continue
@@ -215,7 +249,7 @@ def scrape_web_generic(source: dict) -> list:
             image_url = img["src"] if img else ""
 
             summary_tag = article.find(["p", "span", "div"], class_=re.compile(r"(summary|desc|intro)", re.I))
-            summary = summary_tag.get_text().strip()[:300] if summary_tag else ""
+            summary = clean_html_text(summary_tag.get_text())[:300] if summary_tag else ""
 
             news_list.append({
                 "title": title,
