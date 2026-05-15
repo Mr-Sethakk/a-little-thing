@@ -52,7 +52,7 @@ def scheduled_scrape(source_type=None):
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         match = re.search(r"新增 (\d+) 条", result.stdout)
         new_count = int(match.group(1)) if match else 0
-        scrape_state["last_new_count"] = scrape_state["last_new_count"] + new_count
+        scrape_state["last_new_count"] = new_count
     except Exception:
         pass
     finally:
