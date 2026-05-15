@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { fetchNews, fetchCategories, fetchDates, fetchStats } from './api'
+import { fetchNews, fetchCategories, fetchDates, fetchStats, fetchScrapeStatus } from './api'
 import NewsCard from './components/NewsCard'
 import NewsDetail from './components/NewsDetail'
 import CategoryFilter from './components/CategoryFilter'
@@ -20,6 +20,7 @@ export default function App() {
   const [selectedNews, setSelectedNews] = useState(null)
   const [loading, setLoading] = useState(false)
   const [dark, setDark] = useState(false)
+  const [newCount, setNewCount] = useState(0)
 
   const loadNews = useCallback(async () => {
     setLoading(true)
@@ -34,7 +35,7 @@ export default function App() {
       setTotalPages(data.total_pages)
       setTotalCount(data.total_count)
     } catch (err) {
-      console.error('加载新闻失败:', err)
+      console.error('Failed to load news:', err)
       setNews([])
     } finally {
       setLoading(false)
@@ -58,6 +59,27 @@ export default function App() {
   useEffect(() => {
     document.body.classList.toggle('dark', dark)
   }, [dark])
+
+  // Poll every 60s: check if backend scraped new news
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const st = await fetchStats()
+        if (st.total_news > totalCount && totalCount > 0) {
+          setNewCount(st.total_news - totalCount)
+        }
+      } catch {}
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [totalCount])
+
+  const handleRefresh = () => {
+    setNewCount(0)
+    loadNews()
+    fetchStats().then(setStats).catch(() => {})
+    fetchCategories().then(setCategories).catch(() => {})
+    fetchDates().then(setDates).catch(() => {})
+  }
 
   const handleSearch = (e) => {
     e.preventDefault()
@@ -156,6 +178,25 @@ export default function App() {
       </div>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        {/* New news banner */}
+        {newCount > 0 && (
+          <div className="mb-4">
+            <button
+              onClick={handleRefresh}
+              className={`w-full py-3 px-4 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all animate-pulse ${
+                dark
+                  ? 'bg-blue-900/50 text-blue-300 hover:bg-blue-900/70 border border-blue-700'
+                  : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {newCount} 条新新闻已抓取，点击刷新
+            </button>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="mb-6 space-y-4">
           {/* Date selector */}

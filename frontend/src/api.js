@@ -39,6 +39,11 @@ export async function fetchStats() {
   return data
 }
 
+export async function fetchScrapeStatus() {
+  const { data } = await api.get('/scrape/status')
+  return data
+}
+
 export async function triggerScrape() {
   const { data } = await api.post('/scrape')
   return data

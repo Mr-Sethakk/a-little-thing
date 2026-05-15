@@ -32,6 +32,32 @@ try:
 except Exception:
     pass
 
+# Scraping state
+scrape_state = {"last_time": None, "last_new_count": 0, "running": False}
+
+def scheduled_scrape():
+    import subprocess
+    if scrape_state["running"]:
+        return
+    scrape_state["running"] = True
+    scraper_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scraper", "scraper.py")
+    try:
+        result = subprocess.run(["python", scraper_path], capture_output=True, text=True, timeout=120)
+        import re
+        match = re.search(r"新增 (\d+) 条", result.stdout)
+        scrape_state["last_new_count"] = int(match.group(1)) if match else 0
+    except Exception:
+        pass
+    finally:
+        scrape_state["last_time"] = datetime.now()
+        scrape_state["running"] = False
+
+# APScheduler: scrape every 30 minutes
+from apscheduler.schedulers.background import BackgroundScheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(scheduled_scrape, "interval", minutes=30, id="news_scrape", replace_existing=True)
+scheduler.start()
+
 app = FastAPI(title="经济新闻抓取与展示系统", version="1.0.0")
 
 app.add_middleware(
@@ -125,6 +151,15 @@ def get_stats(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/scrape/status")
+def get_scrape_status():
+    return {
+        "running": scrape_state["running"],
+        "last_time": str(scrape_state["last_time"]) if scrape_state["last_time"] else None,
+        "last_new_count": scrape_state["last_new_count"],
+    }
+
+
 @app.post("/api/scrape")
 def trigger_scrape():
     import subprocess
@@ -196,6 +231,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
 
 @app.get("/api/news/{news_id}/source")
 def fetch_source_content(news_id: int, db: Session = Depends(get_db)):
+    import re
     import httpx
     from bs4 import BeautifulSoup as BS
 
